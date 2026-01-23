@@ -1,0 +1,48 @@
+package service
+
+import (
+	"log"
+	"sync"
+
+	"github.com/aitjcize/photoframe-server/server/pkg/telegram"
+	"gorm.io/gorm"
+)
+
+type TelegramService struct {
+	bot     *telegram.Bot
+	db      *gorm.DB
+	dataDir string
+	mu      sync.Mutex
+}
+
+func NewTelegramService(db *gorm.DB, dataDir string) *TelegramService {
+	return &TelegramService{
+		db:      db,
+		dataDir: dataDir,
+	}
+}
+
+func (s *TelegramService) Restart(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.bot != nil {
+		s.bot.Stop()
+		s.bot = nil
+	}
+
+	if token == "" {
+		log.Println("Telegram bot stopped (no token provided)")
+		return
+	}
+
+	bot, err := telegram.NewBot(token, s.db, s.dataDir)
+	if err != nil {
+		log.Printf("Failed to start Telegram bot: %v", err)
+		return
+	}
+
+	s.bot = bot
+	s.bot.Start()
+	log.Println("Telegram bot started/restarted")
+}

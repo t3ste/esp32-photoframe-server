@@ -1,0 +1,22 @@
+name: "ESP32 PhotoFrame Server"
+version: "1.0.0"
+slug: "photoframe-server"
+description: "Middleware server for ESP32 PhotoFrame (Google Photos & Telegram)"
+url: "https://github.com/aitjcize/esp32-photoframe-server"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: application
+boot: auto
+image: docker.io/aitjcize/esp32-photoframe-server
+ports:
+  9607/tcp: 9607
+webui: http://[HOST]:[PORT:9607]
+map:
+  - config:rw
+options: {}
+schema: {}
+environment:
+  DB_PATH: /config/photoframe.db
+  DATA_DIR: /config/data

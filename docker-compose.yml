@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  photoframe-server:
+    build: .
+    image: photoframe-server:latest
+    container_name: photoframe-server
+    restart: unless-stopped
+    ports:
+      - "9607:9607"
+    volumes:
+      - ./data:/data
+    environment:
+      - DB_PATH=/data/photoframe.db
