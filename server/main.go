@@ -9,6 +9,7 @@ import (
 	"github.com/aitjcize/photoframe-server/server/internal/handler"
 	"github.com/aitjcize/photoframe-server/server/internal/service"
 	"github.com/aitjcize/photoframe-server/server/pkg/googlephotos"
+	"github.com/aitjcize/photoframe-server/server/pkg/photoframe"
 	"github.com/aitjcize/photoframe-server/server/pkg/weather"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -18,8 +19,14 @@ func main() {
 	// Initialize Database
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
-		dbPath = "photoframe.db"
+		dbPath = "esp32-photoframe/photoframe.db"
 	}
+
+	// Ensure directory exists for dbPath
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		log.Fatalf("Failed to create database directory: %v", err)
+	}
+
 	database, err := db.Init(dbPath)
 	if err != nil {
 		log.Fatal("Failed to initialize database:", err)
@@ -45,14 +52,22 @@ func main() {
 	// Initialize Picker Service
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
-		dataDir = "./data"
+		dataDir = "esp32-photoframe/data"
 	}
+	// Ensure dataDir exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Fatalf("Failed to create data directory: %v", err)
+	}
+
 	cleanupTempThumbnails(dataDir)
 
 	pickerService := service.NewPickerService(googleClient, database, dataDir)
 
+	// Initialize PhotoFrame Client
+	photoframeClient := photoframe.NewClient()
+
 	// Initialize Telegram Service
-	telegramService := service.NewTelegramService(database, dataDir)
+	telegramService := service.NewTelegramService(database, dataDir, processorService, settingsService, photoframeClient, overlayService)
 	telegramToken, _ := settingsService.Get("telegram_bot_token")
 	if telegramToken != "" {
 		telegramService.Restart(telegramToken)

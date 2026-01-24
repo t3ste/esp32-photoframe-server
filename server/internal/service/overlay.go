@@ -47,9 +47,9 @@ func (s *OverlayService) ApplyOverlay(img image.Image) (image.Image, error) {
 	gradientHeight := 150.0
 	grad := gg.NewLinearGradient(0, h-gradientHeight, 0, h)
 	grad.AddColorStop(0, color.RGBA{0, 0, 0, 0})
-	grad.AddColorStop(0.3, color.RGBA{0, 0, 0, 120})
-	grad.AddColorStop(0.6, color.RGBA{0, 0, 0, 200})
-	grad.AddColorStop(1, color.RGBA{0, 0, 0, 255})
+	grad.AddColorStop(0.3, color.RGBA{0, 0, 0, 100})
+	grad.AddColorStop(0.6, color.RGBA{0, 0, 0, 130})
+	grad.AddColorStop(1, color.RGBA{0, 0, 0, 160})
 
 	dc.SetFillStyle(grad)
 	dc.DrawRectangle(0, h-gradientHeight, w, gradientHeight)

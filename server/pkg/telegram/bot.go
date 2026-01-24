@@ -1,23 +1,50 @@
 package telegram
 
 import (
+	"image"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
 
+	// Register generic decoders
+
+	_ "image/jpeg"
+	_ "image/png"
+
 	"github.com/aitjcize/photoframe-server/server/internal/model"
+	"github.com/aitjcize/photoframe-server/server/pkg/imageops"
 	tele "gopkg.in/telebot.v3"
 	"gorm.io/gorm"
 )
 
-type Bot struct {
-	b       *tele.Bot
-	db      *gorm.DB
-	dataDir string
+type ImageProcessor interface {
+	ProcessImage(img image.Image, options map[string]string) ([]byte, []byte, error)
 }
 
-func NewBot(token string, db *gorm.DB, dataDir string) (*Bot, error) {
+type SettingsProvider interface {
+	Get(key string) (string, error)
+}
+
+type FrameClient interface {
+	PushImage(host string, pngBytes []byte, thumbBytes []byte) error
+}
+
+type OverlayProvider interface {
+	ApplyOverlay(img image.Image) (image.Image, error)
+}
+
+type Bot struct {
+	b         *tele.Bot
+	db        *gorm.DB
+	dataDir   string
+	processor ImageProcessor
+	settings  SettingsProvider
+	pfClient  FrameClient
+	overlay   OverlayProvider
+}
+
+func NewBot(token string, db *gorm.DB, dataDir string, processor ImageProcessor, settings SettingsProvider, pfClient FrameClient, overlay OverlayProvider) (*Bot, error) {
 	pref := tele.Settings{
 		Token:  token,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
@@ -28,7 +55,15 @@ func NewBot(token string, db *gorm.DB, dataDir string) (*Bot, error) {
 		return nil, err
 	}
 
-	bot := &Bot{b: b, db: db, dataDir: dataDir}
+	bot := &Bot{
+		b:         b,
+		db:        db,
+		dataDir:   dataDir,
+		processor: processor,
+		settings:  settings,
+		pfClient:  pfClient,
+		overlay:   overlay,
+	}
 	bot.registerHandlers()
 
 	return bot, nil
@@ -69,14 +104,81 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 		return c.Send("Failed to download photo: " + err.Error())
 	}
 
-	// Update Caption Setting (Simple KV store)
+	// Update Caption Setting
 	caption := c.Message().Caption
-	// We'll use a direct DB query or need a settings service access.
-	// Since we only have *gorm.DB, let's just do a raw upsert or use model.Setting
 	var setting model.Setting
 	setting.Key = "telegram_caption"
 	setting.Value = caption
 	bot.db.Save(&setting)
 
-	return c.Send("Photo updated! It will be displayed cleanly on the frame.")
+	// Check if Push to Device is enabled
+	pushEnabled, _ := bot.settings.Get("telegram_push_enabled")
+	deviceHost, _ := bot.settings.Get("device_host")
+
+	if pushEnabled == "true" && deviceHost != "" {
+		// Process Image
+		f, err := os.Open(destPath)
+		if err != nil {
+			log.Printf("Failed to open downloaded image: %v", err)
+			return c.Send("Failed to open image for processing.")
+		}
+		img, _, err := image.Decode(f)
+		f.Close()
+		if err != nil {
+			log.Printf("Failed to decode downloaded image: %v", err)
+			return c.Send("Failed to decode image.")
+		}
+
+		// 1. Resize/Crop to Target Dimensions
+		// Get target dimensions based on orientation setting
+		orientation, _ := bot.settings.Get("orientation")
+		targetW, targetH := 800, 480
+		if orientation == "portrait" {
+			targetW, targetH = 480, 800
+		}
+
+		img = imageops.ResizeToFill(img, targetW, targetH)
+
+		// 2. Apply Overlay
+		if bot.overlay != nil {
+			imgWithOverlay, err := bot.overlay.ApplyOverlay(img)
+			if err != nil {
+				log.Printf("Failed to apply overlay: %v", err)
+				// Continue with original resized image if overlay fails
+			} else {
+				img = imgWithOverlay
+			}
+		}
+
+		pngBytes, thumbBytes, err := bot.processor.ProcessImage(img, nil)
+		if err != nil {
+			log.Printf("Failed to process image: %v", err)
+			return c.Send("Failed to process image for device.")
+		}
+
+		// Send initial status
+		statusMsg, err := bot.b.Send(c.Recipient(), "Connecting to device...")
+		if err != nil {
+			log.Printf("Failed to send status message: %v", err)
+			return err
+		}
+
+		err = bot.pfClient.PushImage(deviceHost, pngBytes, thumbBytes)
+		if err != nil {
+			log.Printf("Failed to push to device: %v", err)
+			_, editErr := bot.b.Edit(statusMsg, "Photo updated! Device is offline/unreachable, so it will show up next time the device awakes.")
+			if editErr != nil {
+				return c.Send("Photo updated! Device is offline/unreachable, so it will show up next time the device awakes.")
+			}
+			return nil
+		}
+
+		_, editErr := bot.b.Edit(statusMsg, "Photo updated and displayed on device!")
+		if editErr != nil {
+			return c.Send("Photo updated and displayed on device!")
+		}
+		return nil
+	}
+
+	return c.Send("Photo updated! It will show up next time the device awakes.")
 }

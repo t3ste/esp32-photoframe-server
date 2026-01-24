@@ -467,13 +467,49 @@
                 v-model.trim="form.telegram_bot_token"
                 class="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition"
               />
-              <button
-                @click="save"
-                class="mt-3 px-5 py-2.5 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition"
-              >
-                Update Token
-              </button>
             </div>
+
+            <div class="border-t border-gray-200 pt-4 mt-4">
+              <h3 class="text-lg font-medium text-gray-700 mb-3">
+                Push to Device
+              </h3>
+              <p class="text-sm text-gray-600 mb-4">
+                Enable to push generic images directly to the device display
+                when sent to the bot.
+              </p>
+
+              <label class="flex items-center cursor-pointer mb-4">
+                <input
+                  type="checkbox"
+                  v-model="form.telegram_push_enabled"
+                  class="mr-3 w-5 h-5 text-primary-600 rounded focus:ring-primary-500"
+                />
+                <span class="text-gray-700">Enable Push to Device</span>
+              </label>
+
+              <div v-if="form.telegram_push_enabled">
+                <label class="block mb-2 text-gray-700 font-medium"
+                  >Device Host (IP or Hostname)</label
+                >
+                <input
+                  type="text"
+                  v-model.trim="form.device_host"
+                  placeholder="photoframe.local"
+                  class="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition"
+                />
+                <p class="text-xs text-gray-500 mt-1">
+                  The IP address or hostname of your ESP32 device on the local
+                  network.
+                </p>
+              </div>
+            </div>
+
+            <button
+              @click="save"
+              class="mt-3 px-5 py-2.5 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition"
+            >
+              Update Settings
+            </button>
           </div>
         </div>
         <div v-else>
@@ -539,6 +575,8 @@ const form = reactive({
   google_client_secret: '',
   google_connected: 'false',
   telegram_bot_token: '',
+  telegram_push_enabled: false,
+  device_host: '',
   weather_lat: '',
   weather_lon: '',
   synology_url: '',
@@ -565,6 +603,8 @@ onMounted(async () => {
     google_client_secret: store.settings.google_client_secret || '',
     google_connected: store.settings.google_connected || 'false',
     telegram_bot_token: store.settings.telegram_bot_token || '',
+    telegram_push_enabled: store.settings.telegram_push_enabled === 'true',
+    device_host: store.settings.device_host || '',
     weather_lat: store.settings.weather_lat || '',
     weather_lon: store.settings.weather_lon || '',
     synology_url: store.settings.synology_url || '',
@@ -615,6 +655,8 @@ const saveSettingsInternal = async () => {
     google_client_id: form.google_client_id,
     google_client_secret: form.google_client_secret,
     telegram_bot_token: form.telegram_bot_token,
+    telegram_push_enabled: String(form.telegram_push_enabled),
+    device_host: form.device_host,
     weather_lat: form.weather_lat,
     weather_lon: form.weather_lon,
     synology_url: form.synology_url,

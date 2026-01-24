@@ -35,4 +35,4 @@ dev:
 	@echo "Building frontend..."
 	@cd frontend && npm install && npm run build
 	@echo "Starting server locally..."
-	@cd server && DATA_DIR=$(PWD)/data DB_PATH=$(PWD)/data/photoframe.db STATIC_DIR=../frontend/dist go run .
+	@cd server && CGO_ENABLED=1 DATA_DIR=$(PWD)/data DB_PATH=$(PWD)/data/photoframe.db STATIC_DIR=../frontend/dist go run .

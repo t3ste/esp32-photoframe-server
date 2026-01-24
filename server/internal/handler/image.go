@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"image/draw"
 	"strconv"
 
 	_ "image/jpeg"
@@ -18,6 +17,7 @@ import (
 	"github.com/aitjcize/photoframe-server/server/internal/model"
 	"github.com/aitjcize/photoframe-server/server/internal/service"
 	"github.com/aitjcize/photoframe-server/server/pkg/googlephotos"
+	"github.com/aitjcize/photoframe-server/server/pkg/imageops"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 )
@@ -100,7 +100,7 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	// 1.5. Resize/Crop to Target Dimensions
 	// This ensures the overlay is drawn on the FINAL visible area and not cropped later.
 	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
-	h.drawCover(dst, dst.Bounds(), img)
+	imageops.DrawCover(dst, dst.Bounds(), img)
 	img = dst
 
 	// 2. Overlay
@@ -335,10 +335,10 @@ func (h *ImageHandler) createVerticalCollage(img1, img2 image.Image) image.Image
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 
 	// Draw Top
-	h.drawCover(dst, image.Rect(0, 0, width, slotHeight), img1)
+	imageops.DrawCover(dst, image.Rect(0, 0, width, slotHeight), img1)
 
 	// Draw Bottom
-	h.drawCover(dst, image.Rect(0, slotHeight, width, height), img2)
+	imageops.DrawCover(dst, image.Rect(0, slotHeight, width, height), img2)
 
 	return dst
 }
@@ -353,69 +353,12 @@ func (h *ImageHandler) createHorizontalCollage(img1, img2 image.Image) image.Ima
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 
 	// Draw Left
-	h.drawCover(dst, image.Rect(0, 0, slotWidth, height), img1)
+	imageops.DrawCover(dst, image.Rect(0, 0, slotWidth, height), img1)
 
 	// Draw Right
-	h.drawCover(dst, image.Rect(slotWidth, 0, width, height), img2)
+	imageops.DrawCover(dst, image.Rect(slotWidth, 0, width, height), img2)
 
 	return dst
-}
-
-func (h *ImageHandler) drawCover(dst draw.Image, r image.Rectangle, src image.Image) {
-	// Calculate scaling to cover 'r'
-	srcBounds := src.Bounds()
-	srcW, srcH := srcBounds.Dx(), srcBounds.Dy()
-	dstW, dstH := r.Dx(), r.Dy()
-
-	// Calculate crop rect
-	var srcCrop image.Rectangle
-	if float64(srcW)/float64(srcH) > float64(dstW)/float64(dstH) {
-		// Source is wider than target: Crop width
-		matchW := int(float64(srcH) * float64(dstW) / float64(dstH))
-		midX := srcW / 2
-		srcCrop = image.Rect(midX-matchW/2, 0, midX+matchW/2, srcH)
-	} else {
-		// Source is taller: Crop height
-		matchH := int(float64(srcW) * float64(dstH) / float64(dstW))
-		midY := srcH / 2
-		srcCrop = image.Rect(0, midY-matchH/2, srcW, midY+matchH/2)
-	}
-
-	// Implementation of simple Nearest Neighbor scaler:
-	for y := 0; y < dstH; y++ {
-		for x := 0; x < dstW; x++ {
-			// Percentages in Destination
-			pX := float64(x) / float64(dstW)
-			pY := float64(y) / float64(dstH)
-
-			// Source coords in original image via Crop
-			sX := srcCrop.Min.X + int(pX*float64(srcCrop.Dx()))
-			sY := srcCrop.Min.Y + int(pY*float64(srcCrop.Dy()))
-
-			// Bounds check safety
-			if sX < 0 {
-				sX = 0
-			}
-			if sY < 0 {
-				sY = 0
-			}
-			if sX >= srcW {
-				sX = srcW - 1
-			}
-			if sY >= srcH {
-				sY = srcH - 1
-			}
-
-			dst.Set(r.Min.X+x, r.Min.Y+y, src.At(srcBounds.Min.X+sX, srcBounds.Min.Y+sY))
-		}
-	}
-}
-
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // fetchSynologyPhoto retrieves the photo from Synology Service
