@@ -52,16 +52,47 @@ docker run -d \
 Access the dashboard at `http://localhost:9607` (or your server IP).
 
 ### Google Photos Setup
-1.  Go to **Settings**.
-2.  Select **Source: Google Photos**.
-3.  You need to provide your own Google Cloud Project credentials:
-    -   Create a project in [Google Cloud Console](https://console.cloud.google.com/).
-    -   Enable the **Google Photos Picker API**.
-    -   Create OAuth 2.0 Credentials.
-    -   Set **Authorized Javascript Origins** to your server URL (e.g., `http://localhost:9607`).
-    -   Set **Authorized Redirect URIs** to `http://localhost:9607/api/auth/google/callback`.
-4.  Enter the **Client ID** and **Client Secret** in the dashboard settings and click save.
-5.  Go to the **Gallery** tab and click **Add Photos**.
+
+> [!IMPORTANT]
+> **Google OAuth Restriction**: Google does not allow `.local` domains or private IP addresses in OAuth redirect URIs. If running on Home Assistant, you must use one of these methods:
+> - **Port Forwarding** (recommended for one-time setup): `ssh -L 9607:localhost:9607 root@homeassistant.local -p 22222`
+> - **Public Domain**: Use a domain name with Cloudflare Tunnel or similar
+
+#### Steps:
+
+1.  **Create OAuth Credentials**:
+    -   Go to [Google Cloud Console](https://console.cloud.google.com/)
+    -   Create a new project or select an existing one
+    -   Enable the **Google Photos Picker API**
+    -   Go to **Credentials** → **Create Credentials** → **OAuth 2.0 Client ID**
+    -   Application type: **Web application**
+    -   **Authorized JavaScript Origins**: `http://localhost:9607`
+    -   **Authorized Redirect URIs**: `http://localhost:9607/api/auth/google/callback`
+    -   Click **Create** and save your Client ID and Client Secret
+
+2.  **Configure the Server**:
+    -   If running on Home Assistant, set up port forwarding first:
+        ```bash
+        ssh -L 9607:localhost:9607 root@homeassistant.local -p 22222
+        ```
+    -   Access the dashboard at `http://localhost:9607`
+    -   Go to **Settings**
+    -   Select **Source: Google Photos**
+    -   Enter your **Client ID** and **Client Secret**
+    -   Click **Save All Settings**
+
+3.  **Authenticate and Import Photos**:
+    -   Go to the **Gallery** tab
+    -   Click **Add Photos**
+    -   You'll be redirected to Google OAuth (sign in if needed)
+    -   Select the photos you want to display
+    -   Click **Add** to import them
+
+4.  **After Setup**:
+    -   The OAuth token is saved in the database
+    -   You can close the SSH tunnel (if used)
+    -   Access the server normally via `http://homeassistant.local:9607` or your regular URL
+    -   Re-authentication is only needed if you revoke access or want to add more photos
 
 ### Telegram Setup
 1.  Create a new bot via [@BotFather](https://t.me/botfather) on Telegram.
@@ -74,15 +105,14 @@ Access the dashboard at `http://localhost:9607` (or your server IP).
 ## API Endpoints (For ESP32)
 
 -   `GET /image`: Returns the processed, dithered image ready for display.
-    -   The ESP32 firmware should point to this endpoint.
-    -   Headers: `X-Thumbnail-URL` (optional link to original).
+    -   The ESP32 firmware's auto rotate URL should point to this endpoint.
+    -   Headers: `X-Thumbnail-URL` (optional link to thumbnail).
 
 ## Development
 
 ### Tech Stack
 -   **Backend**: Go (Golang) + Echo Framework + GORM (SQLite).
 -   **Frontend**: Vue 3 + Vite + Tailwind CSS.
--   **Image Processing**: Node.js script (embedded) using `canvas` and `ditherjs` logic.
 
 ### Commands
 -   `make build`: Build Docker image.
