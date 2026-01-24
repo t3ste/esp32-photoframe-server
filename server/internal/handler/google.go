@@ -21,6 +21,15 @@ func NewGoogleHandler(client *googlephotos.Client, picker *service.PickerService
 }
 
 func (h *GoogleHandler) Login(c echo.Context) error {
+	// Construct redirect URL from request
+	scheme := "http"
+	if c.Request().TLS != nil || c.Request().Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	host := c.Request().Host
+	redirectURL := scheme + "://" + host + "/api/auth/google/callback"
+
+	h.client.SetRedirectURL(redirectURL)
 	url := h.client.GetAuthURL()
 	return c.Redirect(http.StatusTemporaryRedirect, url)
 }

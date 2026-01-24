@@ -50,6 +50,6 @@ func (s *SettingsService) GetGoogleConfig() (googlephotos.Config, error) {
 	return googlephotos.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		RedirectURL:  "http://localhost:8080/api/auth/google/callback",
+		RedirectURL:  "", // Will be set dynamically
 	}, nil
 }

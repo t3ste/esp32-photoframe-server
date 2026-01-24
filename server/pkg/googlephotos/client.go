@@ -26,6 +26,7 @@ type Client struct {
 	configProvider ConfigProvider
 	store          TokenStore
 	client         *http.Client
+	redirectURL    string
 }
 
 func NewClient(provider ConfigProvider, store TokenStore) *Client {
@@ -35,15 +36,24 @@ func NewClient(provider ConfigProvider, store TokenStore) *Client {
 	}
 }
 
+func (c *Client) SetRedirectURL(url string) {
+	c.redirectURL = url
+}
+
 func (c *Client) getOAuthConfig() (*oauth2.Config, error) {
 	cfg, err := c.configProvider.GetGoogleConfig()
 	if err != nil {
 		return nil, err
 	}
+	// Use dynamically set redirect URL if available, otherwise fall back to config
+	redirectURL := c.redirectURL
+	if redirectURL == "" {
+		redirectURL = cfg.RedirectURL
+	}
 	return &oauth2.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
-		RedirectURL:  cfg.RedirectURL,
+		RedirectURL:  redirectURL,
 		Scopes: []string{
 			"https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
 			"https://www.googleapis.com/auth/userinfo.email",
