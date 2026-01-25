@@ -1,7 +1,5 @@
 <template>
-  <div
-    class="max-w-md mx-auto bg-white rounded-xl p-8 shadow-xl"
-  >
+  <div class="max-w-md mx-auto bg-white rounded-xl p-8 shadow-xl">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Welcome!</h2>
     <p class="text-gray-600 mb-8 text-center">
       Create an admin account to get started.

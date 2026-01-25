@@ -688,12 +688,13 @@
               class="text-green-800 hover:text-green-900 text-xl"
             >
               ×
-          </button>
+            </button>
           </div>
           <div class="bg-white p-2 rounded border border-green-200 relative">
-            <code class="break-all text-sm font-mono text-gray-800 block pr-20">{{
-              generatedToken
-            }}</code>
+            <code
+              class="break-all text-sm font-mono text-gray-800 block pr-20"
+              >{{ generatedToken }}</code
+            >
             <button
               @click="copyToken"
               class="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium rounded transition-colors"
@@ -1028,16 +1029,44 @@ const tokenCopied = ref(false);
 
 const copyToken = async () => {
   try {
-    await navigator.clipboard.writeText(generatedToken.value);
-    tokenCopied.value = true;
-    setTimeout(() => {
-      tokenCopied.value = false;
-    }, 2000);
+    // Try modern clipboard API first (requires HTTPS or localhost)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(generatedToken.value);
+      tokenCopied.value = true;
+      setTimeout(() => {
+        tokenCopied.value = false;
+      }, 2000);
+    } else {
+      // Fallback for non-secure contexts (HTTP)
+      const textArea = document.createElement('textarea');
+      textArea.value = generatedToken.value;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+
+      try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+          tokenCopied.value = true;
+          setTimeout(() => {
+            tokenCopied.value = false;
+          }, 2000);
+        } else {
+          showToast('Failed to copy token');
+        }
+      } catch (err) {
+        showToast('Failed to copy token');
+      } finally {
+        document.body.removeChild(textArea);
+      }
+    }
   } catch (e) {
     showToast('Failed to copy token');
   }
 };
-
 
 // Password Change
 const showPasswordForm = ref(false);
