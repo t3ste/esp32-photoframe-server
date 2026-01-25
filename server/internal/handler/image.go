@@ -126,6 +126,9 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 		}
 	}
 
+	// Set Content-Length header
+	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
+
 	return c.Blob(http.StatusOK, "image/png", processedBytes)
 }
 
@@ -150,6 +153,9 @@ func (h *ImageHandler) GetServedImageThumbnail(c echo.Context) error {
 		time.Sleep(5 * time.Minute)
 		os.Remove(thumbPath)
 	}()
+
+	// Set Content-Length header
+	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 
 	return c.Blob(http.StatusOK, "image/jpeg", data)
 }
