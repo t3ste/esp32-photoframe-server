@@ -51,7 +51,7 @@ func main() {
 	googleClient := googlephotos.NewClient(settingsService, tokenStore)
 
 	// Initialize Processor
-	// We use global photoframe-process command
+	// We use global epaper-image-convert command
 	processorService := service.NewProcessorService()
 	// Initialize Overlay
 	weatherClient := weather.NewClient()

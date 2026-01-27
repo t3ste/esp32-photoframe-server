@@ -60,17 +60,9 @@ COPY --from=builder /app/photoframe-server /app/photoframe-server
 # Copy Frontend Build
 COPY --from=frontend-builder /app/dist /app/static
 
-# Clone and install processor scripts
-RUN apk add --no-cache git && \
-    git clone --depth 1 https://github.com/aitjcize/esp32-photoframe.git /tmp/esp32-photoframe && \
-    mkdir -p /app/process-cli && \
-    cp -r /tmp/esp32-photoframe/process-cli/* /app/process-cli/ && \
-    cd /app/process-cli && \
-    npm install && \
-    npm install -g . && \
-    ln -s /usr/local/bin/photoframe-process /usr/bin/photoframe-process || true && \
-    rm -rf /tmp/esp32-photoframe && \
-    apk del git
+# Install epaper-image-convert
+RUN npm install -g epaper-image-convert && \
+    ln -s /usr/local/bin/epaper-image-convert /usr/bin/epaper-image-convert || true
 
 WORKDIR /app
 

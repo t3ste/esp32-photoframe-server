@@ -40,13 +40,30 @@ func (s *ProcessorService) ProcessImage(img image.Image, options map[string]stri
 	}
 	f.Close()
 
-	// 3. Prepare CLI arguments
-	// Use photoframe-process binary
-	args := []string{inputPath, "-o", tmpDir}
-	for k, v := range options {
-		args = append(args, "--"+k, v)
+	// 3. Prepare output paths
+	outputPath := filepath.Join(tmpDir, "output.png")
+	thumbPath := filepath.Join(tmpDir, "thumbnail.jpg")
+
+	// 4. Prepare CLI arguments for epaper-image-convert
+	// epaper-image-convert input.jpg output.png -d WxH -t thumbnail.jpg [options]
+	args := []string{inputPath, outputPath}
+
+	// Add dimension if specified
+	if dimension, ok := options["dimension"]; ok {
+		args = append(args, "-d", dimension)
 	}
-	cmd := exec.Command("photoframe-process", args...)
+
+	// Add thumbnail output
+	args = append(args, "-t", thumbPath)
+
+	// Add other options (excluding dimension which we already handled)
+	for k, v := range options {
+		if k != "dimension" {
+			args = append(args, "--"+k, v)
+		}
+	}
+
+	cmd := exec.Command("epaper-image-convert", args...)
 
 	// Capture output for debugging
 	output, err := cmd.CombinedOutput()
@@ -58,12 +75,8 @@ func (s *ProcessorService) ProcessImage(img image.Image, options map[string]stri
 	// Log CLI output for debug
 	// fmt.Printf("CLI Output: %s\n", string(output))
 
-	// 4. Read outputs
-	// CLI generates source.png and source.jpg (thumbnail)
-	pngPath := filepath.Join(tmpDir, "source.png")
-	thumbPath := filepath.Join(tmpDir, "source.jpg")
-
-	processedBytes, err := os.ReadFile(pngPath)
+	// 5. Read outputs
+	processedBytes, err := os.ReadFile(outputPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read processed image: %s. CLI Output: %s", err, string(output))
 	}

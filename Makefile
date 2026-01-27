@@ -14,13 +14,11 @@ run:
 	docker run -d -p 9607:9607 -v "$(PWD)/data:/data" --name photoframe-server photoframe-server
 
 dev:
-	@if ! command -v photoframe-process >/dev/null 2>&1; then \
-		echo "Installing photoframe-process..."; \
-		git clone --depth 1 https://github.com/aitjcize/esp32-photoframe.git /tmp/esp32-photoframe; \
-		cd /tmp/esp32-photoframe/process-cli && npm install -g .; \
-		rm -rf /tmp/esp32-photoframe; \
+	@if ! command -v epaper-image-convert >/dev/null 2>&1; then \
+		echo "Installing epaper-image-convert..."; \
+		npm install -g epaper-image-convert; \
 	else \
-		echo "photoframe-process already installed, skipping..."; \
+		echo "epaper-image-convert already installed, skipping..."; \
 	fi
 	@if [ ! -f bin/fonts/NotoSans-Regular.ttf ]; then \
 		echo "Downloading NotoSans font..."; \
