@@ -277,16 +277,15 @@ func drawCover(dst *image.RGBA, target image.Rectangle, src image.Image) {
 }
 
 // tryCreateCollage attempts to create a collage with an unpaired previous image
+// For a Landscape device: combine two Portrait images horizontally
+// For a Portrait device: combine two Landscape images vertically
 func (bot *Bot) tryCreateCollage(newImage model.Image) {
-	// Find an unpaired image of opposite orientation
+	// Find an unpaired image of the SAME orientation
+	// Two Portrait images → Horizontal collage for Landscape device
+	// Two Landscape images → Vertical collage for Portrait device
 	var pairedImage model.Image
-	oppositeOrientation := "portrait"
-	if newImage.Orientation == "portrait" {
-		oppositeOrientation = "landscape"
-	}
 
-	// Find the oldest unpaired image of opposite orientation
-	result := bot.db.Where("source = ? AND orientation = ? AND status != ?", "telegram", oppositeOrientation, "collage_paired").
+	result := bot.db.Where("source = ? AND orientation = ? AND status != ?", "telegram", newImage.Orientation, "collage_paired").
 		Order("created_at ASC").
 		First(&pairedImage)
 
@@ -310,14 +309,16 @@ func (bot *Bot) tryCreateCollage(newImage model.Image) {
 		return
 	}
 
-	// Create collage
+	// Create collage based on device orientation
+	// Portrait images → Horizontal collage (for Landscape device)
+	// Landscape images → Vertical collage (for Portrait device)
 	var collage image.Image
 	if newImage.Orientation == "portrait" {
-		// Device Portrait -> need Landscape for vertical stack
-		collage = createVerticalCollage(pairedImg, newImg)
-	} else {
-		// Device Landscape -> need Portrait for horizontal side-by-side
+		// Two Portrait images → Horizontal side-by-side
 		collage = createHorizontalCollage(pairedImg, newImg)
+	} else {
+		// Two Landscape images → Vertical stack
+		collage = createVerticalCollage(pairedImg, newImg)
 	}
 
 	// Save collage to file
