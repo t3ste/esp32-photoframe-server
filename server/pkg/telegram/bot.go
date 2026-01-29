@@ -3,6 +3,9 @@ package telegram
 import (
 	"fmt"
 	"image"
+	"image/jpeg"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"os"
@@ -110,6 +113,9 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 		log.Printf("Failed to create DB entry for Telegram photo: %v", err)
 	}
 
+	// Try to create a collage with an unpaired previous image
+	bot.tryCreateCollage(imageEntry)
+
 	// Update Caption Setting
 	caption := c.Message().Caption
 	var setting model.Setting
@@ -192,4 +198,168 @@ func getImageOrientation(path string) string {
 		return "portrait"
 	}
 	return "landscape"
+}
+
+// createVerticalCollage creates a vertical collage (portrait: 480x800)
+func createVerticalCollage(img1, img2 image.Image) image.Image {
+	width := 480
+	height := 800
+	slotHeight := 400
+
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	// Draw Top
+	drawCover(dst, image.Rect(0, 0, width, slotHeight), img1)
+
+	// Draw Bottom
+	drawCover(dst, image.Rect(0, slotHeight, width, height), img2)
+
+	return dst
+}
+
+// createHorizontalCollage creates a horizontal collage (landscape: 800x480)
+func createHorizontalCollage(img1, img2 image.Image) image.Image {
+	width := 800
+	height := 480
+	slotWidth := 400
+
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	// Draw Left
+	drawCover(dst, image.Rect(0, 0, slotWidth, height), img1)
+
+	// Draw Right
+	drawCover(dst, image.Rect(slotWidth, 0, width, height), img2)
+
+	return dst
+}
+
+// drawCover draws img scaled to cover the target rectangle
+func drawCover(dst *image.RGBA, target image.Rectangle, src image.Image) {
+	srcBounds := src.Bounds()
+	srcW := srcBounds.Dx()
+	srcH := srcBounds.Dy()
+
+	// Calculate scaling
+	targetW := target.Dx()
+	targetH := target.Dy()
+
+	var scale float64
+	if float64(srcW)/float64(targetW) > float64(srcH)/float64(targetH) {
+		scale = float64(targetW) / float64(srcW)
+	} else {
+		scale = float64(targetH) / float64(srcH)
+	}
+
+	scaledW := int(float64(srcW) * scale)
+	scaledH := int(float64(srcH) * scale)
+
+	// Center the image
+	// offsetX and offsetY are calculated but not used in this simple implementation
+
+	scaled := image.NewRGBA(image.Rect(0, 0, scaledW, scaledH))
+	for y := 0; y < scaledH; y++ {
+		for x := 0; x < scaledW; x++ {
+			sx := int(float64(x) / scale)
+			sy := int(float64(y) / scale)
+			if sx >= 0 && sx < srcW && sy >= 0 && sy < srcH {
+				scaled.Set(x, y, src.At(sx, sy))
+			}
+		}
+	}
+
+	// Copy to target
+	for y := 0; y < targetH; y++ {
+		for x := 0; x < targetW; x++ {
+			dst.Set(target.Min.X+x, target.Min.Y+y, scaled.At(x, y))
+		}
+	}
+}
+
+// tryCreateCollage attempts to create a collage with an unpaired previous image
+func (bot *Bot) tryCreateCollage(newImage model.Image) {
+	// Find an unpaired image of opposite orientation
+	var pairedImage model.Image
+	oppositeOrientation := "portrait"
+	if newImage.Orientation == "portrait" {
+		oppositeOrientation = "landscape"
+	}
+
+	// Find the oldest unpaired image of opposite orientation
+	result := bot.db.Where("source = ? AND orientation = ? AND status != ?", "telegram", oppositeOrientation, "collage_paired").
+		Order("created_at ASC").
+		First(&pairedImage)
+
+	if result.Error != nil {
+		if result.Error != gorm.ErrRecordNotFound {
+			log.Printf("Failed to find paired image: %v", result.Error)
+		}
+		return // No paired image found, nothing to do
+	}
+
+	// Load both images
+	newImg, err := bot.loadImage(newImage.FilePath)
+	if err != nil {
+		log.Printf("Failed to load new image for collage: %v", err)
+		return
+	}
+
+	pairedImg, err := bot.loadImage(pairedImage.FilePath)
+	if err != nil {
+		log.Printf("Failed to load paired image for collage: %v", err)
+		return
+	}
+
+	// Create collage
+	var collage image.Image
+	if newImage.Orientation == "portrait" {
+		// Device Portrait -> need Landscape for vertical stack
+		collage = createVerticalCollage(pairedImg, newImg)
+	} else {
+		// Device Landscape -> need Portrait for horizontal side-by-side
+		collage = createHorizontalCollage(pairedImg, newImg)
+	}
+
+	// Save collage to file
+	collagePath := filepath.Join(bot.dataDir, "photos", fmt.Sprintf("telegram_collage_%d.jpg", time.Now().UnixNano()))
+	f, err := os.Create(collagePath)
+	if err != nil {
+		log.Printf("Failed to create collage file: %v", err)
+		return
+	}
+	defer f.Close()
+
+	if err := jpeg.Encode(f, collage, nil); err != nil {
+		log.Printf("Failed to save collage: %v", err)
+		return
+	}
+
+	// Mark both images as collage_paired
+	bot.db.Model(&newImage).Update("status", "collage_paired")
+	bot.db.Model(&pairedImage).Update("status", "collage_paired")
+
+	// Create collage image entry
+	collageEntry := model.Image{
+		FilePath:         collagePath,
+		Source:           "telegram",
+		Orientation:      "collage",
+		CreatedAt:        time.Now(),
+		TelegramUpdateID: newImage.TelegramUpdateID,
+	}
+	if err := bot.db.Create(&collageEntry).Error; err != nil {
+		log.Printf("Failed to create collage DB entry: %v", err)
+	}
+
+	log.Printf("Created collage from images %d and %d", newImage.ID, pairedImage.ID)
+}
+
+// loadImage loads an image from file
+func (bot *Bot) loadImage(path string) (image.Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	img, _, err := image.Decode(f)
+	return img, err
 }
