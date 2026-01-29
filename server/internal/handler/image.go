@@ -654,16 +654,11 @@ func (h *ImageHandler) ServeTelegramImageAfter(c echo.Context) error {
 
 	if enableCollage && len(items) >= 2 {
 		// Smart Collage mode: fetch first image and create collage if needed
-		img, err = h.fetchSmartCollageWithItems(logicalW, logicalH, items)
+		img, maxUpdateID, err = h.fetchSmartCollageWithItems(logicalW, logicalH, items)
 		if err != nil {
-			// Fallback to single image (first/newest available)
-			img, maxUpdateID, err = h.loadImageFromItem(items[0])
-			if err != nil {
-				return c.NoContent(http.StatusNoContent)
-			}
-		} else {
-			// Use the first image's update ID for collage
-			maxUpdateID = items[0].TelegramUpdateID
+			// No matching pair found - return 204 No Content
+			// First image is kept for future collage requests
+			return c.NoContent(http.StatusNoContent)
 		}
 	} else {
 		// Single image mode: return the NEXT image (smallest update_id > given)
@@ -718,9 +713,14 @@ func (h *ImageHandler) loadImageFromItem(item model.Image) (image.Image, int64, 
 	return img, item.TelegramUpdateID, err
 }
 
-// fetchSmartCollageWithItems creates a collage from available items
-func (h *ImageHandler) fetchSmartCollageWithItems(screenW, screenH int, items []model.Image) (image.Image, error) {
+// fetchSmartCollageWithItems creates a collage from available items.
+// Returns error if no matching pair can be found (so the image can be kept for future requests).
+func (h *ImageHandler) fetchSmartCollageWithItems(screenW, screenH int, items []model.Image) (image.Image, int64, error) {
 	devicePortrait := screenH > screenW
+
+	if len(items) < 2 {
+		return nil, 0, fmt.Errorf("need at least 2 images for collage")
+	}
 
 	// Load all items as images
 	var images []image.Image
@@ -736,26 +736,11 @@ func (h *ImageHandler) fetchSmartCollageWithItems(screenW, screenH int, items []
 	}
 
 	if len(images) == 0 {
-		return nil, fmt.Errorf("no valid images for collage")
+		return nil, 0, fmt.Errorf("no valid images for collage")
 	}
 
 	// First image
 	img1 := images[0]
-	bounds := img1.Bounds()
-	w, h_img := bounds.Dx(), bounds.Dy()
-	isPhotoPortrait := h_img > w
-
-	// Case 1: Match - single photo is sufficient
-	if isPhotoPortrait == devicePortrait {
-		// Return the last image (newest) as single photo
-		return images[len(images)-1], nil
-	}
-
-	// Case 2: Mismatch - need second image
-	if len(images) < 2 {
-		// Not enough images, return first
-		return img1, nil
-	}
 
 	// Find matching second image
 	for i := 1; i < len(images); i++ {
@@ -764,15 +749,15 @@ func (h *ImageHandler) fetchSmartCollageWithItems(screenW, screenH int, items []
 
 		if devicePortrait && !isPortrait {
 			// Device Portrait, need Landscape -> Vertical Stack
-			return h.createVerticalCollage(img1, images[i]), nil
+			return h.createVerticalCollage(img1, images[i]), updateIDs[0], nil
 		}
 
 		if !devicePortrait && isPortrait {
 			// Device Landscape, need Portrait -> Horizontal Side-by-Side
-			return h.createHorizontalCollage(img1, images[i]), nil
+			return h.createHorizontalCollage(img1, images[i]), updateIDs[0], nil
 		}
 	}
 
-	// No matching pair found, return first image
-	return img1, nil
+	// No matching pair found - return error so first image is kept for future
+	return nil, 0, fmt.Errorf("no matching second image for collage")
 }
