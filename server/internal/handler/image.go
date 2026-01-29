@@ -551,9 +551,18 @@ func (h *ImageHandler) fetchPlaceholder() (image.Image, error) {
 	return img, err
 }
 
-// ServeTelegramImageAfter returns the newest Telegram image(s) with update_id greater than the given updateID.
+// ServeTelegramImageAfter returns the next Telegram image with update_id greater than the given updateID.
 // Returns 204 No Content if no new image is available.
-// Supports Smart Collage mode by combining images if enabled.
+//
+// Behavior:
+// - updateID = 0: Returns the NEWEST image (for initial download)
+// - updateID > 0: Returns the NEXT image (smallest update_id > given) for sequential download
+//
+// This allows the client to download all new images one by one:
+//  1. Initial: /after/0 -> gets newest (update_id=104)
+//  2. Next:   /after/104 -> gets next new (update_id=103) [if exists]
+//  3. Next:   /after/103 -> gets next new (update_id=102) [if exists]
+//  4. Next:   /after/102 -> 204 No Content (no more new images)
 func (h *ImageHandler) ServeTelegramImageAfter(c echo.Context) error {
 	updateIDStr := c.Param("updateID")
 	updateID, err := strconv.ParseInt(updateIDStr, 10, 64)
@@ -647,18 +656,19 @@ func (h *ImageHandler) ServeTelegramImageAfter(c echo.Context) error {
 		// Smart Collage mode: fetch first image and create collage if needed
 		img, err = h.fetchSmartCollageWithItems(logicalW, logicalH, items)
 		if err != nil {
-			// Fallback to single image
-			img, maxUpdateID, err = h.loadImageFromItem(items[len(items)-1])
+			// Fallback to single image (first/newest available)
+			img, maxUpdateID, err = h.loadImageFromItem(items[0])
 			if err != nil {
 				return c.NoContent(http.StatusNoContent)
 			}
 		} else {
-			// Use the newest image's update ID for collage
-			maxUpdateID = items[len(items)-1].TelegramUpdateID
+			// Use the first image's update ID for collage
+			maxUpdateID = items[0].TelegramUpdateID
 		}
 	} else {
-		// Single image mode: return the newest image
-		img, maxUpdateID, err = h.loadImageFromItem(items[len(items)-1])
+		// Single image mode: return the NEXT image (smallest update_id > given)
+		// This allows the client to download all new images one by one
+		img, maxUpdateID, err = h.loadImageFromItem(items[0])
 		if err != nil {
 			return c.NoContent(http.StatusNoContent)
 		}
