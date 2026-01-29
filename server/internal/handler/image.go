@@ -150,14 +150,34 @@ func (h *ImageHandler) ServeImage(c echo.Context) error {
 	var err error
 
 	if source == "telegram" {
-		// Serve Telegram Photo (always single, no collage)
-		imgPath := filepath.Join(h.dataDir, "photos", "telegram_last.jpg")
-		f, fsErr := os.Open(imgPath)
-		if fsErr != nil {
-			img, err = h.fetchPlaceholder()
+		if enableCollage {
+			// Smart Collage for Telegram (requires DB entries)
+			img, _, err = h.fetchSmartCollage(logicalW, logicalH, source)
+			if err != nil {
+				// Fallback to single telegram photo if no DB entries
+				imgPath := filepath.Join(h.dataDir, "photos", "telegram_last.jpg")
+				f, fsErr := os.Open(imgPath)
+				if fsErr != nil {
+					img, err = h.fetchPlaceholder()
+				} else {
+					defer f.Close()
+					img, _, err = image.Decode(f)
+				}
+			}
 		} else {
-			defer f.Close()
-			img, _, err = image.Decode(f)
+			// Single photo from DB (newest telegram photo)
+			img, _, err = h.fetchRandomPhoto(source)
+			if err != nil {
+				// Fallback to telegram_last.jpg
+				imgPath := filepath.Join(h.dataDir, "photos", "telegram_last.jpg")
+				f, fsErr := os.Open(imgPath)
+				if fsErr != nil {
+					img, err = h.fetchPlaceholder()
+				} else {
+					defer f.Close()
+					img, _, err = image.Decode(f)
+				}
+			}
 		}
 	} else if enableCollage {
 		img, _, err = h.fetchSmartCollage(logicalW, logicalH, source)

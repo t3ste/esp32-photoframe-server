@@ -1,6 +1,9 @@
 package telegram
 
 import (
+	"fmt"
+	"image"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -85,6 +88,24 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 		return c.Send("Failed to download photo: " + err.Error())
 	}
 
+	// Also save as unique file for collage support
+	timestamp := time.Now().UnixNano()
+	uniquePath := filepath.Join(photosDir, fmt.Sprintf("telegram_%d.jpg", timestamp))
+	if err := copyFile(destPath, uniquePath); err != nil {
+		log.Printf("Failed to create unique copy for collage: %v", err)
+	}
+
+	// Create DB entry for smart collage support
+	imageEntry := model.Image{
+		FilePath:    uniquePath,
+		Source:      "telegram",
+		Orientation: getImageOrientation(uniquePath),
+		CreatedAt:   time.Now(),
+	}
+	if err := bot.db.Create(&imageEntry).Error; err != nil {
+		log.Printf("Failed to create DB entry for Telegram photo: %v", err)
+	}
+
 	// Update Caption Setting
 	caption := c.Message().Caption
 	var setting model.Setting
@@ -130,4 +151,41 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 	}
 
 	return c.Send("Photo updated! It will show up next time the device awakes.")
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
+}
+
+// getImageOrientation determines if an image is portrait or landscape
+func getImageOrientation(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return "landscape"
+	}
+	defer f.Close()
+
+	img, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return "landscape"
+	}
+
+	if img.Height > img.Width {
+		return "portrait"
+	}
+	return "landscape"
 }
