@@ -74,6 +74,9 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 	// Download photo
 	photo := c.Message().Photo
 
+	// Get the Telegram update ID for deduplication
+	telegramUpdateID := int64(c.Update().ID)
+
 	// Create directory if not exists
 	photosDir := filepath.Join(bot.dataDir, "photos")
 	if err := os.MkdirAll(photosDir, 0755); err != nil {
@@ -97,10 +100,11 @@ func (bot *Bot) handlePhoto(c tele.Context) error {
 
 	// Create DB entry for smart collage support
 	imageEntry := model.Image{
-		FilePath:    uniquePath,
-		Source:      "telegram",
-		Orientation: getImageOrientation(uniquePath),
-		CreatedAt:   time.Now(),
+		FilePath:         uniquePath,
+		Source:           "telegram",
+		Orientation:      getImageOrientation(uniquePath),
+		CreatedAt:        time.Now(),
+		TelegramUpdateID: telegramUpdateID,
 	}
 	if err := bot.db.Create(&imageEntry).Error; err != nil {
 		log.Printf("Failed to create DB entry for Telegram photo: %v", err)

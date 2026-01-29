@@ -550,3 +550,170 @@ func (h *ImageHandler) fetchPlaceholder() (image.Image, error) {
 	img, _, err := image.Decode(resp.Body)
 	return img, err
 }
+
+// ServeTelegramImageAfter returns the newest Telegram image(s) with update_id greater than the given updateID.
+// Returns 204 No Content if no new image is available.
+// Supports Smart Collage mode by combining images if enabled.
+func (h *ImageHandler) ServeTelegramImageAfter(c echo.Context) error {
+	updateIDStr := c.Param("updateID")
+	updateID, err := strconv.ParseInt(updateIDStr, 10, 64)
+	if err != nil {
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	// Check if collage mode is enabled via header
+	enableCollage := c.Request().Header.Get("X-Collage-Enabled") == "true"
+
+	// Get display dimensions from headers
+	wStr := c.Request().Header.Get("X-Display-Width")
+	hStr := c.Request().Header.Get("X-Display-Height")
+	logicalW, logicalH := 800, 480
+
+	if w, err := strconv.Atoi(wStr); err == nil && w > 0 {
+		logicalW = w
+	}
+	if he, err := strconv.Atoi(hStr); err == nil && he > 0 {
+		logicalH = he
+	}
+
+	// Fetch all images with telegram_update_id > given updateID
+	var items []model.Image
+	result := h.db.Where("source = ? AND telegram_update_id > ?", "telegram", updateID).
+		Order("telegram_update_id ASC").
+		Find(&items)
+
+	if result.Error != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+	}
+
+	if len(items) == 0 {
+		// No new images available
+		return c.NoContent(http.StatusNoContent)
+	}
+
+	var img image.Image
+	var maxUpdateID int64
+
+	if enableCollage && len(items) >= 2 {
+		// Smart Collage mode: fetch first image and create collage if needed
+		img, err = h.fetchSmartCollageWithItems(logicalW, logicalH, items)
+		if err != nil {
+			// Fallback to single image
+			img, maxUpdateID, err = h.loadImageFromItem(items[len(items)-1])
+			if err != nil {
+				return c.NoContent(http.StatusNoContent)
+			}
+		} else {
+			// Use the newest image's update ID for collage
+			maxUpdateID = items[len(items)-1].TelegramUpdateID
+		}
+	} else {
+		// Single image mode: return the newest image
+		img, maxUpdateID, err = h.loadImageFromItem(items[len(items)-1])
+		if err != nil {
+			return c.NoContent(http.StatusNoContent)
+		}
+	}
+
+	// Resize/Crop to target dimensions
+	dst := image.NewRGBA(image.Rect(0, 0, logicalW, logicalH))
+	imageops.DrawCover(dst, dst.Bounds(), img)
+	img = dst
+
+	// Process image
+	procOptions := map[string]string{
+		"dimension": fmt.Sprintf("%dx%d", logicalW, logicalH),
+	}
+	processedBytes, thumbBytes, err := h.processor.ProcessImage(img, procOptions)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "processor failed"})
+	}
+
+	// Set X-Update-ID header so client knows the update ID of this image
+	c.Response().Header().Set("X-Update-ID", fmt.Sprintf("%d", maxUpdateID))
+
+	// Handle thumbnail
+	if thumbBytes != nil {
+		thumbID := fmt.Sprintf("%d", time.Now().UnixNano())
+		thumbPath := filepath.Join(h.dataDir, fmt.Sprintf("thumb_%s.jpg", thumbID))
+		if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
+			thumbnailUrl := fmt.Sprintf("http://%s/served-image-thumbnail/%s", c.Request().Host, thumbID)
+			c.Response().Header().Set("X-Thumbnail-URL", thumbnailUrl)
+		}
+	}
+
+	c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
+	return c.Blob(http.StatusOK, "image/png", processedBytes)
+}
+
+// loadImageFromItem loads an image from a model.Image item
+func (h *ImageHandler) loadImageFromItem(item model.Image) (image.Image, int64, error) {
+	resolvedPath := h.resolvePath(item.FilePath)
+	f, err := os.Open(resolvedPath)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+
+	img, _, err := image.Decode(f)
+	return img, item.TelegramUpdateID, err
+}
+
+// fetchSmartCollageWithItems creates a collage from available items
+func (h *ImageHandler) fetchSmartCollageWithItems(screenW, screenH int, items []model.Image) (image.Image, error) {
+	devicePortrait := screenH > screenW
+
+	// Load all items as images
+	var images []image.Image
+	var updateIDs []int64
+	for _, item := range items {
+		img, updateID, err := h.loadImageFromItem(item)
+		if err != nil {
+			log.Printf("Failed to load image %s: %v", item.FilePath, err)
+			continue
+		}
+		images = append(images, img)
+		updateIDs = append(updateIDs, updateID)
+	}
+
+	if len(images) == 0 {
+		return nil, fmt.Errorf("no valid images for collage")
+	}
+
+	// First image
+	img1 := images[0]
+	bounds := img1.Bounds()
+	w, h_img := bounds.Dx(), bounds.Dy()
+	isPhotoPortrait := h_img > w
+
+	// Case 1: Match - single photo is sufficient
+	if isPhotoPortrait == devicePortrait {
+		// Return the last image (newest) as single photo
+		return images[len(images)-1], nil
+	}
+
+	// Case 2: Mismatch - need second image
+	if len(images) < 2 {
+		// Not enough images, return first
+		return img1, nil
+	}
+
+	// Find matching second image
+	for i := 1; i < len(images); i++ {
+		b := images[i].Bounds()
+		isPortrait := b.Dy() > b.Dx()
+
+		if devicePortrait && !isPortrait {
+			// Device Portrait, need Landscape -> Vertical Stack
+			return h.createVerticalCollage(img1, images[i]), nil
+		}
+
+		if !devicePortrait && isPortrait {
+			// Device Landscape, need Portrait -> Horizontal Side-by-Side
+			return h.createHorizontalCollage(img1, images[i]), nil
+		}
+	}
+
+	// No matching pair found, return first image
+	return img1, nil
+}

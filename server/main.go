@@ -142,6 +142,8 @@ func main() {
 
 	// Image Route (Protected)
 	e.GET("/image/:source", ih.ServeImage, authMiddleware)
+	// Telegram image after specific update ID (for fetching new images)
+	e.GET("/image/telegram/after/:updateID", ih.ServeTelegramImageAfter, authMiddleware)
 	// Thumbnail likely needs protection too, or obscure IDs. For now, keep public as they are temporary?
 	// User said "access the /image/<source>/ endpoint. This one... people can't just access".
 	// Let's protect main image endpoint.
