@@ -578,9 +578,58 @@ func (h *ImageHandler) ServeTelegramImageAfter(c echo.Context) error {
 
 	// Fetch all images with telegram_update_id > given updateID
 	var items []model.Image
-	result := h.db.Where("source = ? AND telegram_update_id > ?", "telegram", updateID).
-		Order("telegram_update_id ASC").
-		Find(&items)
+	query := h.db.Where("source = ? AND telegram_update_id > ?", "telegram", updateID)
+
+	// Special case: if updateID is 0 (initial download), get the newest image directly
+	// This avoids the need for polling to get the latest image
+	if updateID == 0 {
+		var newestImage model.Image
+		result := h.db.Where("source = ?", "telegram").
+			Order("telegram_update_id DESC").
+			First(&newestImage)
+
+		if result.Error != nil {
+			if result.Error == gorm.ErrRecordNotFound {
+				return c.NoContent(http.StatusNoContent)
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+		}
+
+		// Load and return the newest image
+		img, maxUpdateID, err := h.loadImageFromItem(newestImage)
+		if err != nil {
+			return c.NoContent(http.StatusNoContent)
+		}
+
+		// Process single image (collage not applicable for initial download)
+		dst := image.NewRGBA(image.Rect(0, 0, logicalW, logicalH))
+		imageops.DrawCover(dst, dst.Bounds(), img)
+		img = dst
+
+		procOptions := map[string]string{
+			"dimension": fmt.Sprintf("%dx%d", logicalW, logicalH),
+		}
+		processedBytes, thumbBytes, err := h.processor.ProcessImage(img, procOptions)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "processor failed"})
+		}
+
+		c.Response().Header().Set("X-Update-ID", fmt.Sprintf("%d", maxUpdateID))
+
+		if thumbBytes != nil {
+			thumbID := fmt.Sprintf("%d", time.Now().UnixNano())
+			thumbPath := filepath.Join(h.dataDir, fmt.Sprintf("thumb_%s.jpg", thumbID))
+			if err := os.WriteFile(thumbPath, thumbBytes, 0644); err == nil {
+				thumbnailUrl := fmt.Sprintf("http://%s/served-image-thumbnail/%s", c.Request().Host, thumbID)
+				c.Response().Header().Set("X-Thumbnail-URL", thumbnailUrl)
+			}
+		}
+
+		c.Response().Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
+		return c.Blob(http.StatusOK, "image/png", processedBytes)
+	}
+
+	result := query.Order("telegram_update_id ASC").Find(&items)
 
 	if result.Error != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
