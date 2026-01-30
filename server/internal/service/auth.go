@@ -74,6 +74,18 @@ func (s *AuthService) Login(username, password string) (string, error) {
 	return s.generateToken(&user)
 }
 
+// ValidateCredentials returns true if username/password are valid
+func (s *AuthService) ValidateCredentials(username, password string) bool {
+	var user model.User
+	if err := s.db.Where("username = ?", username).First(&user).Error; err != nil {
+		return false
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return false
+	}
+	return true
+}
+
 func (s *AuthService) generateToken(user *model.User) (string, error) {
 	claims := JWTClaims{
 		UserID:   user.ID,

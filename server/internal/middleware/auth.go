@@ -11,8 +11,20 @@ import (
 func JWTMiddleware(authService *service.AuthService) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			// Extract token
+			// Extract token - try multiple methods
 			tokenString := extractToken(c)
+
+			// Try HTTP Basic Authentication as alternative
+			if tokenString == "" {
+				if basicUser, basicPass, ok := c.Request().BasicAuth(); ok {
+					if !authService.ValidateCredentials(basicUser, basicPass) {
+						return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+					}
+					// Generate a token for Basic Auth users
+					tokenString, _ = authService.Login(basicUser, basicPass)
+				}
+			}
+
 			if tokenString == "" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "missing authentication token"})
 			}
@@ -22,8 +34,6 @@ func JWTMiddleware(authService *service.AuthService) echo.MiddlewareFunc {
 			if err != nil {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid authentication token"})
 			}
-
-			// Determine if this is a setup-only route? No, unrelated here.
 
 			// Set user context
 			c.Set("user_id", claims.UserID)
