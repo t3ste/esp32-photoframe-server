@@ -60,6 +60,9 @@ COPY --from=builder /app/photoframe-server /app/photoframe-server
 # Copy Frontend Build
 COPY --from=frontend-builder /app/dist /app/static
 
+# Copy Migrations
+COPY server/db/migrations /app/db/migrations
+
 # Install epaper-image-convert
 RUN npm install -g @aitjcize/epaper-image-convert
 
