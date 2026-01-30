@@ -288,7 +288,7 @@ func (h *ImageHandler) fetchSmartCollage(screenW, screenH int, sourceFilter stri
 	devicePortrait := screenH > screenW
 
 	// Fetch first image
-	img1, id1, err := h.fetchRandomPhoto(sourceFilter)
+	img1, id1, err := h.fetchRandomPhotoWithType("portrait", sourceFilter)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -309,7 +309,7 @@ func (h *ImageHandler) fetchSmartCollage(screenW, screenH int, sourceFilter stri
 		// 1. Try DB first
 		img2, id2, err := h.fetchRandomPhotoWithType("landscape", sourceFilter)
 		if err == nil && id2 != id1 {
-			return h.createVerticalCollage(img1, img2), 0, nil
+			return h.createVerticalCollage(img1, img2, screenW, screenH), 0, nil
 		}
 		// 2. Fallback: Try random loop
 		for i := 0; i < 5; i++ {
@@ -318,12 +318,12 @@ func (h *ImageHandler) fetchSmartCollage(screenW, screenH int, sourceFilter stri
 				b := cand.Bounds()
 				if b.Dx() > b.Dy() { // Is Landscape
 					// fmt.Printf("SmartCollage: Found match via random!\n")
-					return h.createVerticalCollage(img1, cand), 0, nil
+					return h.createVerticalCollage(img1, cand, screenW, screenH), 0, nil
 				}
 			}
 		}
 		// Fallback: Use same photo twice
-		return h.createVerticalCollage(img1, img1), 0, nil
+		return h.createVerticalCollage(img1, img1, screenW, screenH), 0, nil
 	}
 
 	// Device Landscape, Photo Portrait -> Horizontal Side-by-Side
@@ -331,7 +331,7 @@ func (h *ImageHandler) fetchSmartCollage(screenW, screenH int, sourceFilter stri
 		// Try fetch second portrait
 		img2, id2, err := h.fetchRandomPhotoWithType("portrait", sourceFilter)
 		if err == nil && id2 != id1 {
-			return h.createHorizontalCollage(img1, img2), 0, nil
+			return h.createHorizontalCollage(img1, img2, screenW, screenH), 0, nil
 		}
 		// 2. Fallback
 		for i := 0; i < 5; i++ {
@@ -340,12 +340,12 @@ func (h *ImageHandler) fetchSmartCollage(screenW, screenH int, sourceFilter stri
 				b := cand.Bounds()
 				if b.Dy() > b.Dx() { // Is Portrait
 					// fmt.Printf("SmartCollage: Found match via random!\n")
-					return h.createHorizontalCollage(img1, cand), 0, nil
+					return h.createHorizontalCollage(img1, cand, screenW, screenH), 0, nil
 				}
 			}
 		}
 		// Fallback: Use same photo twice
-		return h.createHorizontalCollage(img1, img1), 0, nil
+		return h.createHorizontalCollage(img1, img1, screenW, screenH), 0, nil
 	}
 
 	return img1, id1, nil
@@ -383,12 +383,10 @@ func (h *ImageHandler) fetchRandomPhotoWithType(targetType string, sourceFilter 
 	return img, item.ID, nil
 }
 
-func (h *ImageHandler) createVerticalCollage(img1, img2 image.Image) image.Image {
-	// Target Dimension: 480x800 (Portrait)
-	// Each slot: 480x400
-	width := 480
-	height := 800
-	slotHeight := 400
+func (h *ImageHandler) createVerticalCollage(img1, img2 image.Image, width, height int) image.Image {
+	// Target Dimension: width x height (Portrait)
+	// Each slot: width x (height/2)
+	slotHeight := height / 2
 
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 
@@ -401,12 +399,10 @@ func (h *ImageHandler) createVerticalCollage(img1, img2 image.Image) image.Image
 	return dst
 }
 
-func (h *ImageHandler) createHorizontalCollage(img1, img2 image.Image) image.Image {
-	// Target Dimension: 800x480 (Landscape)
-	// Each slot: 400x480
-	width := 800
-	height := 480
-	slotWidth := 400
+func (h *ImageHandler) createHorizontalCollage(img1, img2 image.Image, width, height int) image.Image {
+	// Target Dimension: width x height (Landscape)
+	// Each slot: (width/2) x height
+	slotWidth := width / 2
 
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 
